@@ -26,10 +26,8 @@
 
   ==============================================================================
 */
-
 #include "dummy/dummy.h"
-
-#include "core/lua.h"
+#include "rubyk.h"
 
 using namespace dummy;
 
