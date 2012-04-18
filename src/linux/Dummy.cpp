@@ -26,49 +26,15 @@
 
   ==============================================================================
 */
-#ifndef LUBYK_INCLUDE_DUMMY_DUMMY_H_
-#define LUBYK_INCLUDE_DUMMY_DUMMY_H_
-
-#include "dub/dub.h"
-
+#include "dummy/dummy.h"
 namespace dummy {
 
-/** Dummy (a simple class to test bindings).
- *
- * @dub push: pushobject
- *      register: 'Dummy_core'
- */
-class Dummy : public dub::Thread {
-public:
-  Dummy() {}
-
-  /** Used to test if the callback is properly set.
-   */
-  float callback(const char *func, float value) {
-    if (!dub_pushcallback(func)) return 0;
-    // <func> <self>
-    lua_pushnumber(dub_L, value);
-    // <func> <self> <number>
-    if (dub_call(2, 1)) {
-      float res = lua_tonumber(dub_L, -1);
-      lua_pop(dub_L, 1);
-      return res;
-    } else {
-      return 0;
-    }
-  }
-
-  /** This method becomes a lua binding to C and will be
-   * overloaded in Lua.
-   */
-  float addSomething(float value) {
-    return value + 123.0;
-  }
-
-  static const char *plat();
-};
+const char *Dummy::plat() {
+  return "linux";
+}
 
 } // dummy
 
-#endif // LUBYK_INCLUDE_DUMMY_DUMMY_H_
+
+
 
