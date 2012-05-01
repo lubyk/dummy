@@ -13,12 +13,19 @@ require 'dummy.Dummy'
 local should = test.Suite('dummy')
 
 function should.haveStaticFunction()
-  assertEqual('macosx', dummy.Dummy_plat())
+  assertEqual('macosx', dummy.Dummy.plat())
 end
 
 function should.returnTableOnNew()
-  local self = dummy.Dummy()
-  assertType('table', self)
+  local d = dummy.Dummy()
+  assertType('table', d)
+  d = dummy.Dummy.new()
+  assertType('table', d)
+end
+
+function should.respondToType()
+  local d = dummy.Dummy()
+  assertEqual('dummy.Dummy', d.type)
 end
 
 function should.containSuper()
@@ -74,14 +81,6 @@ function should.overloadCallback()
     return self.super:addSomething(nb + 10)
   end
   assertEqual(148, obj:addSomething(15))
-end
-
-function should.initializeWithTable()
-  local obj = dummy.Dummy {
-    name = "Muad'Dib"
-  }
-
-  assertEqual("Muad'Dib", obj.name)
 end
 
 test.all()

@@ -36,7 +36,7 @@ namespace dummy {
 /** Dummy (a simple class to test bindings).
  *
  * @dub push: pushobject
- *      register: 'Dummy_core'
+ *      register: Dummy_core
  */
 class Dummy : public dub::Thread {
 public:

@@ -205,8 +205,8 @@ void Thread::pushobject(lua_State *L, void *ptr, const char *tname, bool gc) {
   // L:     <self>
 }
 
-bool Thread::dub_pushcallback(const char *name) {
-  lua_State *L = dub_L;
+bool Thread::dub_pushcallback(const char *name) const {
+  lua_State *L = const_cast<lua_State *>(dub_L);
   lua_getfield(L, 1, name);
   if (lua_isnil(L, -1)) {
     lua_pop(L, 1);
@@ -218,12 +218,14 @@ bool Thread::dub_pushcallback(const char *name) {
   }
 }
 
-void Thread::dub_pushvalue(const char *name) {
-  lua_getfield(dub_L, 1, name);
+void Thread::dub_pushvalue(const char *name) const {
+  lua_State *L = const_cast<lua_State *>(dub_L);
+  lua_getfield(L, 1, name);
 }
 
-bool Thread::dub_call(int param_count, int retval_count) {
-  int status = lua_pcall(dub_L, param_count, retval_count, 2);
+bool Thread::dub_call(int param_count, int retval_count) const {
+  lua_State *L = const_cast<lua_State *>(dub_L);
+  int status = lua_pcall(L, param_count, retval_count, 2);
   if (status) {
     if (status == LUA_ERRRUN) {
       // failure properly handled by the error handler
@@ -339,9 +341,15 @@ void dub_pushudata(lua_State *L, void *ptr, const char *tname, bool gc) {
   userdata->gc = gc;
 
   // the userdata is now on top of the stack
+  luaL_getmetatable(L, tname);
+  if (lua_isnil(L, -1)) {
+    lua_pop(L, 1);
+    // create empty metatable on the fly for opaque types.
+    luaL_newmetatable(L, tname);
+  }
+  // <udata> <mt>
 
   // set metatable (contains methods)
-  luaL_getmetatable(L, tname);
   lua_setmetatable(L, -2);
 }
 
@@ -429,8 +437,15 @@ static inline void **getsdata(lua_State *L, int ud, const char *tname, bool keep
       lua_getfield(L, LUA_REGISTRYINDEX, tname);  /* get correct metatable */
       if (lua_rawequal(L, -1, -2)) {
         // same (correct) metatable
+        lua_pop(L, keep_mt ? 1 : 2);
       } else {
         p = dub_cast_ud(L, ud, tname);
+        // ... <ud> ... <ud> <mt/nil>
+        if (p && keep_mt) {
+          lua_remove(L, -2);
+        } else {
+          lua_pop(L, 2);
+        }
       }
     }
   } else if (lua_istable(L, ud)) {
@@ -441,32 +456,41 @@ static inline void **getsdata(lua_State *L, int ud, const char *tname, bool keep
     // ... <ud> ...
     // TODO: optimize by storing key in registry ?
     lua_pushlstring(L, "super", 5);
-    // ... <ud> ... <'super'>
+    // ... <ud> ... 'super'
     lua_rawget(L, ud);
     // ... <ud> ... <ud?>
     p = (void**)lua_touserdata(L, -1);
     if (p != NULL) {
+      // ... <ud> ... <ud>
       if (lua_getmetatable(L, -1)) {  /* does it have a metatable? */
+        // ... <ud> ... <ud> <mt>
         lua_getfield(L, LUA_REGISTRYINDEX, tname);  /* get correct metatable */
+        // ... <ud> ... <ud> <mt> <mt>
         if (lua_rawequal(L, -1, -2)) {
           // same (correct) metatable
           lua_remove(L, -3);
           // ... <ud> ... <mt> <mt>
+          lua_pop(L, keep_mt ? 1 : 2);
         } else {
+          lua_remove(L, -3);
+          // ... <ud> ... <mt> <mt>
           p = dub_cast_ud(L, ud, tname);
+          // ... <ud> ... <ud> <mt/nil>
+          if (p && keep_mt) {
+            lua_remove(L, -2);
+            // ... <ud> ... <mt>
+          } else {
+            lua_pop(L, 2);
+            // ... <ud> ...
+          }
         }
+      } else {
+        lua_pop(L, 1);
+        // ... <ud> ...
       }
     } else {
-      lua_pop(L, -1);
-      // ... <ud> ...
-    }
-  }
-  if (p) {
-    if (!keep_mt) {
-      lua_pop(L, 2);
-    } else {
-      // keep 1 metatable on top (needed by bindings)
       lua_pop(L, 1);
+      // ... <ud> ...
     }
   }
   return p;
@@ -515,8 +539,8 @@ void **dub_checksdata_d(lua_State *L, int ud, const char *tname) throw(dub::Exce
 // =============================================== dub_register
 // ======================================================================
 
-// The metatable lives in libname.ClassName_
-void dub_register(lua_State *L, const char *libname, const char *class_name) {
+void dub_register(lua_State *L, const char *libname, const char *reg_name, const char *type_name) {
+  type_name = type_name ? type_name : reg_name;
   // meta-table should be on top
   // <mt>
   lua_getfield(L, -1, "__index");
@@ -534,11 +558,11 @@ void dub_register(lua_State *L, const char *libname, const char *class_name) {
   // <mt> "type"
   if (strcmp(libname, "_G")) {
     // not in _G
-    lua_pushfstring(L, "%s.%s", libname, class_name);
-    // <mt>."type" = "libname.class_name"
+    lua_pushfstring(L, "%s.%s", libname, type_name);
+    // <mt>."type" = "libname.type_name"
   } else {
-    lua_pushstring(L, class_name);
-    // <mt>."type" = "class_name"
+    lua_pushstring(L, type_name);
+    // <mt>."type" = "type_name"
   }
   lua_settable(L, -3);
 
@@ -547,7 +571,7 @@ void dub_register(lua_State *L, const char *libname, const char *class_name) {
   // get or create Foo.Bar.Baz table.
   const char *tbl_err = luaL_findtable(L, LUA_GLOBALSINDEX, libname, 1);
   if (tbl_err) {
-    fprintf(stderr, "Could load '%s' into '%s' ('%s' is not a table).\n", class_name, libname, tbl_err);
+    fprintf(stderr, "Could load '%s' into '%s' ('%s' is not a table).\n", reg_name, libname, tbl_err);
     return; // mt table not registered and not properly configured
   }
       
@@ -563,7 +587,7 @@ void dub_register(lua_State *L, const char *libname, const char *class_name) {
   }
 
   // <mt> <lib>
-  lua_pushstring(L, class_name);
+  lua_pushstring(L, reg_name);
   // <mt> <lib> "Foobar"
   lua_pushvalue(L, -3);
   // <mt> <lib>.Foobar = <mt>
@@ -573,9 +597,9 @@ void dub_register(lua_State *L, const char *libname, const char *class_name) {
   // <mt>
 
   // Setup the __call meta-table with an upvalue
-  size_t sz = strlen(DUB_INIT_CODE) + strlen(class_name) + strlen(libname) + 2;
+  size_t sz = strlen(DUB_INIT_CODE) + strlen(reg_name) + strlen(libname) + 2;
   char *lua_code = (char*)malloc(sizeof(char) * sz);
-  snprintf(lua_code, sz, DUB_INIT_CODE, libname, class_name);
+  snprintf(lua_code, sz, DUB_INIT_CODE, libname, reg_name);
   //printf("%s\n", lua_code);
   /*
   local class = lib.Foobar
@@ -621,4 +645,23 @@ void dub_register_const(lua_State *L, const dub_const_Reg*l) {
     lua_pushnumber(L, l->value);
     lua_setfield(L, -2, l->name);
   }
+}
+
+// This is called whenever we ask for obj:deleted() in Lua
+int dub_isDeleted(lua_State *L) {
+  void **p = (void**)lua_touserdata(L, 1);
+  if (p == NULL && lua_istable(L, 1)) {
+    // get p from super
+    // <ud>
+    // TODO: optimize by storing key in registry ?
+    lua_pushlstring(L, "super", 5);
+    // <ud> 'super'
+    lua_rawget(L, 1);
+    // <ud> <ud?>
+    p = (void**)lua_touserdata(L, 2);
+    lua_pop(L, 1);
+    // <ud>
+  }
+  lua_pushboolean(L, p && !*p);
+  return 1;
 }

@@ -54,6 +54,10 @@ extern "C" {
 #include <string>    // std::string for Exception
 #include <exception> // std::exception
 
+// Helpers to check for explicit 'false' or 'true' return values.
+#define lua_isfalse(L,i) (lua_isboolean(L,i) && !lua_toboolean(L,i))
+#define lua_istrue(L,i)  (lua_isboolean(L,i) && lua_toboolean(L,i))
+
 struct DubUserdata {
   void *ptr;
   bool gc;
@@ -103,8 +107,10 @@ public:
 
   /** This is called on object instanciation by dub instead of
    * dub_pushudata to setup dub_userdata_.
+   *
+   * TODO: Do we really have to make this virtual ?
    */
-  virtual void pushobject(lua_State *L, void *ptr, const char *type_name, bool gc = true);
+  void pushobject(lua_State *L, void *ptr, const char *type_name, bool gc = true);
 
 protected:
   /** Pointer to the userdata. *userdata => pointer to C++ object.
@@ -124,28 +130,35 @@ public:
    * called instead of dub_pushudata.
    * <udata> <mt>
    */
-  virtual void pushobject(lua_State *L, void *ptr, const char *type_name, bool gc = true);
+  void pushobject(lua_State *L, void *ptr, const char *type_name, bool gc = true);
 
   /** Push function 'name' found in <self> on the stack with <self> as
    * first argument.
+   *
+   * Constness is there to make it easy to implement callbacks like
+   * int rowCount() const, without requiring users to fiddle with constness
+   * which is not a notion part of Lua anyway.
    */
-  bool dub_pushcallback(const char *name);
+  bool dub_pushcallback(const char *name) const;
 
   /** Push any lua value from self on the stack.
    */
-  void dub_pushvalue(const char *name);
+  void dub_pushvalue(const char *name) const;
   
   /** Execute the protected call. If an error occurs, dub tries to find
    * an 'error' function in <self> and calls this function with the
    * error string. If no error function is found, the error message is
    * just printed out to stderr.
    */
-  bool dub_call(int param_count, int retval_count);
+  bool dub_call(int param_count, int retval_count) const;
 
-protected:
-  /** Lua thread that contains <self> on stack position 1.
+  /** Lua thread that contains <self> on stack position 1. This lua thread
+   * is public to ease object state manipulation from C++ (but stack *must
+   * not* be messed up).
    */
   lua_State *dub_L;
+
+protected:
   /** Type name (allows faster check for cast).
    */
   const char *dub_typename_;
@@ -294,34 +307,23 @@ void **dub_checksdata_n(lua_State *L, int ud, const char *tname, bool keep_mt = 
 #define luaL_checkboolean(L,n) (lua_toboolean(L,n))
 #define dub_checkboolean(L,n) (lua_toboolean(L,n))
 
-
-
-
-// ======================================================================
-// =============================================== dub_error
-// ======================================================================
 // This calls lua_Error after preparing the error message with line
 // and number.
 int dub_error(lua_State *L);
 
+// This is a Lua binding called whenever we ask for obj:deleted() in Lua
+int dub_isDeleted(lua_State *L);
 
-
-// ======================================================================
-// =============================================== dub_protect
-// ======================================================================
 /** Protect garbage collection from pointers stored in objects or
  * retrieved in userdata copies.
  */
 void dub_protect(lua_State *L, int owner, int original, const char *key);
 
-// ======================================================================
-// =============================================== dub_register
-// ======================================================================
-void dub_register(lua_State *L, const char *libname, const char *class_name);
+/** Register a class inside a library, creating empty tables as
+ * needed.
+ */
+void dub_register(lua_State *L, const char *libname, const char *reg_name, const char *class_name = NULL);
 
-// ======================================================================
-// =============================================== dub_hash
-// ======================================================================
 // sdbm function: taken from http://www.cse.yorku.ca/~oz/hash.html
 // This version is slightly adapted to cope with different
 // hash sizes (and to be easy to write in Lua).

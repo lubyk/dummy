@@ -7,4 +7,5 @@
   loading the Dummy class.
 
 --]]------------------------------------------------------
-require 'dummy.Dummy_core'
+local lib = dummy.Dummy_core
+dummy.Dummy = lib

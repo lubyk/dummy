@@ -31,6 +31,6 @@ add_custom_target("${MODULE_NAME}_bind"
 # --------------------------------------------------------------
 #  install                                     
 # --------------------------------------------------------------
-install(DIRECTORY lubyk
-  DESTINATION lib
-)                                  
+install(DIRECTORY lib
+  DESTINATION ${LUBYK_LIB}
+)
