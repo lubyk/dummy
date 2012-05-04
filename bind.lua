@@ -14,7 +14,7 @@
 --]]------------------------------------------------------
 require 'lubyk'
 
-local base = lk.directory(lk.scriptPath())
+local base = lk.pathDir(lk.scriptPath())
 
 local ins = dub.Inspector {
   INPUT    = {
