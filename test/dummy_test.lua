@@ -8,7 +8,6 @@
 
 --]]------------------------------------------------------
 require 'lubyk'
-require 'dummy.Dummy'
 
 local should = test.Suite('dummy')
 
